@@ -6,6 +6,7 @@ import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
 import com.telephone.coursetable.Http.HttpConnectionAndCode;
+import com.telephone.coursetable.MyApp;
 
 import java.io.DataOutputStream;
 import java.io.IOException;
@@ -19,6 +20,7 @@ import java.util.List;
 import java.util.zip.GZIPInputStream;
 
 import javax.net.ssl.HttpsURLConnection;
+import javax.net.ssl.SSLSocketFactory;
 
 public class Post {
     /**
@@ -56,7 +58,11 @@ public class Post {
             if (parms != null && parms.length > 0) {
                 u_bulider.append("?").append(TextUtils.join("&", parms));
             }
-            url = new URL(u_bulider.toString());
+            String url_s = u_bulider.toString();
+            if (MyApp.ip_override){
+                url_s = url_s.replace(MyApp.guet_v_domain, MyApp.guet_v_ip);
+            }
+            url = new URL(url_s);
             cnt = (HttpsURLConnection) url.openConnection();
             cnt.setDoOutput(true);
             cnt.setDoInput(true);
@@ -83,13 +89,23 @@ public class Post {
             }else {
                 cnt.setInstanceFollowRedirects(redirect);
             }
+            cnt.setRequestProperty("Connection", "keep-alive");
             cnt.setReadTimeout(4000);
             cnt.setConnectTimeout(2000);
+            SSLSocketFactory exist_ssl = MyApp.getCurrentApp().ssl;
+            if (exist_ssl != null){
+                cnt.setSSLSocketFactory(exist_ssl);
+            }
+            if (MyApp.ip_override && cnt.getURL().toString().contains(MyApp.guet_v_ip)) {
+                cnt.setRequestProperty("Host", MyApp.guet_v_domain);
+                cnt.setHostnameVerifier((hostname, session) -> HttpsURLConnection.getDefaultHostnameVerifier().verify(MyApp.guet_v_domain, session));
+            }
             cnt.connect();
         } catch (Exception e) {
             e.printStackTrace();
             return new HttpConnectionAndCode(-1);
         }
+        MyApp.getCurrentApp().ssl = cnt.getSSLSocketFactory();
         String body = "";
         if (data != null){
             body += data;
@@ -103,7 +119,7 @@ public class Post {
         try {
             dos.writeBytes(body);
             dos.flush();
-            dos.close();
+//            dos.close();
         } catch (Exception e) {
             e.printStackTrace();
             return new HttpConnectionAndCode(-4);
@@ -135,12 +151,12 @@ public class Post {
             e.printStackTrace();
             return new HttpConnectionAndCode(-5);
         }
-        try {
-            in.close();
-        } catch (IOException e) {
-            e.printStackTrace();
-            return new HttpConnectionAndCode(-2);
-        }
+//        try {
+//            in.close();
+//        } catch (IOException e) {
+//            e.printStackTrace();
+//            return new HttpConnectionAndCode(-2);
+//        }
 
         //get cookie from server
         String set_cookie = null;

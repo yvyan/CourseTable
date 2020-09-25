@@ -37,13 +37,8 @@ public class GetBitmap {
                                             @Nullable final String cookie_delimiter){
         URL url = null;
         HttpURLConnection cnt = null;
-        DataOutputStream dos = null;
-        InputStreamReader in = null;
         String response = null;
         Bitmap bmp = null;
-        String tail = null;
-        String success_resp_text = null;
-        Boolean redirect = false;
         int resp_code = 0;
         try {
             StringBuilder u_bulider = new StringBuilder();
@@ -61,11 +56,7 @@ public class GetBitmap {
                 cnt.setRequestProperty("Cookie", cookie);
             }
             cnt.setRequestMethod("GET");
-            if (redirect == null) {
-                cnt.setInstanceFollowRedirects(true);
-            }else {
-                cnt.setInstanceFollowRedirects(redirect);
-            }
+            cnt.setInstanceFollowRedirects(false);
             cnt.setReadTimeout(4000);
             cnt.setConnectTimeout(2000);
             cnt.connect();
@@ -102,17 +93,6 @@ public class GetBitmap {
                 cookie_builder.append(cookie_join);
             }
             set_cookie = cookie_builder.toString();
-        }
-
-        //do not disconnect, keep alive
-        if (success_resp_text != null){
-            if (!response.contains(success_resp_text)){
-                //if cookie_delimiter != null but no server cookie, set_cookie = ""
-                //if no response, response = ""
-                HttpConnectionAndCode res = new HttpConnectionAndCode(cnt, -6, response, set_cookie, resp_code);
-                res.obj = bmp;
-                return res;
-            }
         }
 
         //do not disconnect, keep alive
