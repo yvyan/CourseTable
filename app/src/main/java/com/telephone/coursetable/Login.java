@@ -12,7 +12,11 @@ import android.text.Spanned;
 import android.text.SpannedString;
 import android.text.style.AbsoluteSizeSpan;
 import android.util.Log;
+import android.view.Menu;
+import android.view.MenuInflater;
+import android.view.MenuItem;
 import android.view.View;
+import android.widget.AdapterView;
 import android.widget.ArrayAdapter;
 import android.widget.AutoCompleteTextView;
 import android.widget.Button;
@@ -48,6 +52,10 @@ import com.telephone.coursetable.Http.HttpConnectionAndCode;
 import com.telephone.coursetable.Http.Post;
 import com.telephone.coursetable.Library.LibraryActivity;
 import com.telephone.coursetable.Merge.Merge;
+import com.telephone.coursetable.MyException.ExceptionIpForbidden;
+import com.telephone.coursetable.MyException.ExceptionNetworkError;
+import com.telephone.coursetable.MyException.ExceptionUnknown;
+import com.telephone.coursetable.MyException.ExceptionWrongUserOrPassword;
 import com.telephone.coursetable.OCR.OCR;
 
 import java.time.format.DateTimeFormatter;
@@ -67,6 +75,35 @@ public class Login extends AppCompatActivity {
     private GradesDao grdao = null;
     private ExamInfoDao edao = null;
     private CETDao cetDao = null;
+
+    private boolean isMenuEnabled = true;
+
+    @Override
+    public boolean onCreateOptionsMenu(Menu menu) {
+        MenuInflater inflater = getMenuInflater();
+        inflater.inflate(R.menu.login, menu);
+        return true;
+    }
+
+    @Override
+    public boolean onOptionsItemSelected(@NonNull MenuItem item) {
+        switch (item.getItemId()) {
+            case android.R.id.home:
+                startActivity(new Intent(Login.this, MainActivity.class));
+                return true;
+            case R.id.login_menu_switch_login_mode:
+                startActivity(new Intent(Login.this, Login_vpn.class));
+                return true;
+        }
+        return true;
+    }
+
+    @Override
+    public boolean onPrepareOptionsMenu(Menu menu) {
+        MenuItem item = menu.findItem(R.id.login_menu_switch_login_mode);
+        item.setEnabled(isMenuEnabled);
+        return true;
+    }
 
     /**
      * @ui
@@ -120,10 +157,11 @@ public class Login extends AppCompatActivity {
         final ArrayAdapter<String> ada = new ArrayAdapter<>(Login.this, android.R.layout.simple_dropdown_item_1line, udao.selectAllUserName());
         runOnUiThread(() -> {
             ((AutoCompleteTextView) findViewById(R.id.sid_input)).setAdapter(ada);
-            ((AutoCompleteTextView) findViewById(R.id.sid_input)).setOnDismissListener(() -> {
+            ((AutoCompleteTextView) findViewById(R.id.sid_input)).setOnItemClickListener((AdapterView<?> parent, View view, int position, long id) -> {
                 clearAllIMAndFocus();
+                String selected_sid = (String) parent.getAdapter().getItem(position);
                 new Thread(() -> {
-                    final List<User> userSelected = udao.selectUser(((AutoCompleteTextView) findViewById(R.id.sid_input)).getText().toString());
+                    final List<User> userSelected = udao.selectUser(selected_sid);
                     if (!userSelected.isEmpty()) {
                         runOnUiThread(() -> {
                             ((AutoCompleteTextView) findViewById(R.id.passwd_input)).setText(userSelected.get(0).password);
@@ -173,6 +211,8 @@ public class Login extends AppCompatActivity {
         ((Button)findViewById(R.id.button2)).setEnabled(false);
         ((ImageView)findViewById(R.id.imageView_checkcode)).setEnabled(false);
         ((ProgressBar)findViewById(R.id.progressBar)).setVisibility(View.VISIBLE);
+        isMenuEnabled = false;
+        invalidateOptionsMenu();
     }
 
     /**
@@ -187,6 +227,8 @@ public class Login extends AppCompatActivity {
         ((Button)findViewById(R.id.button2)).setEnabled(clickable);
         ((ImageView)findViewById(R.id.imageView_checkcode)).setEnabled(clickable);
         ((ProgressBar)findViewById(R.id.progressBar)).setVisibility(View.INVISIBLE);
+        isMenuEnabled = clickable;
+        invalidateOptionsMenu();
     }
 
     /**
@@ -339,7 +381,7 @@ public class Login extends AppCompatActivity {
      * @return {@link Login_vpn#vpn_login(Context, String, String)}
      * @clear
      */
-    public static String vpn_login_test(Context c, final String sid, final String pwd){
+    public static String vpn_login_test(Context c, final String sid, final String pwd) throws ExceptionWrongUserOrPassword, ExceptionUnknown, ExceptionIpForbidden, ExceptionNetworkError {
         return Login_vpn.vpn_login(c, sid, pwd);
     }
 
@@ -374,7 +416,8 @@ public class Login extends AppCompatActivity {
                 null,
                 false
         );
-        if (login_res.code == 0 && login_res.resp_code == 302){
+        if (login_res.code == -7){
+            login_res.code = 0;
             Log.e(NAME + " " + "login status", "success");
         }else {
             if (login_res.code == 0){
@@ -701,20 +744,32 @@ public class Login extends AppCompatActivity {
                             return;
                         }
                         /** call {@link #vpn_login_test(Context, String, String)} */
-                        String vpn_login_res = vpn_login_test(Login.this, sid, vpn_pwd);
-                        /** if vpn login test fail */
-                        if (vpn_login_res == null || vpn_login_res.equals(getResources().getString(R.string.wan_vpn_ip_forbidden))){
-                            runOnUiThread((Runnable) () -> {
-                                /** show tip snack-bar */
-                                if (vpn_login_res != null && vpn_login_res.equals(getResources().getString(R.string.wan_vpn_ip_forbidden))){
-                                    Snackbar.make(view, getResources().getString(R.string.lan_snackbar_vpn_test_login_fail_ip), BaseTransientBottomBar.LENGTH_SHORT).show();
-                                }else {
-                                    Snackbar.make(view, getResources().getString(R.string.lan_snackbar_vpn_test_login_fail), BaseTransientBottomBar.LENGTH_SHORT).show();
-                                }
-                                /** call {@link #unlock(boolean)} with true */
+                        String vpn_login_res = null;
+                        try {
+                            vpn_login_res = vpn_login_test(Login.this, sid, vpn_pwd);
+                        } catch (ExceptionWrongUserOrPassword exceptionWrongUserOrPassword) {
+                            runOnUiThread(()->{
+                                Snackbar.make(view, getResources().getString(R.string.lan_snackbar_vpn_test_login_fail_wrong_pwd), BaseTransientBottomBar.LENGTH_SHORT).show();
                                 unlock(true);
                             });
-                            /** end this thread */
+                            return;
+                        } catch (ExceptionUnknown exceptionUnknown) {
+                            runOnUiThread(()->{
+                                Snackbar.make(view, getResources().getString(R.string.lan_snackbar_vpn_test_login_fail), BaseTransientBottomBar.LENGTH_SHORT).show();
+                                unlock(true);
+                            });
+                            return;
+                        } catch (ExceptionIpForbidden exceptionIpForbidden) {
+                            runOnUiThread(()->{
+                                Snackbar.make(view, getResources().getString(R.string.lan_snackbar_vpn_test_login_fail_ip), BaseTransientBottomBar.LENGTH_SHORT).show();
+                                unlock(true);
+                            });
+                            return;
+                        } catch (ExceptionNetworkError exceptionNetworkError) {
+                            runOnUiThread(()->{
+                                Snackbar.make(view, getResources().getString(R.string.lan_snackbar_vpn_test_login_fail_net_error), BaseTransientBottomBar.LENGTH_SHORT).show();
+                                unlock(true);
+                            });
                             return;
                         }
                         /** call {@link #outside_login_test(Context, String, String)} */
